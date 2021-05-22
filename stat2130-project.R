@@ -39,3 +39,41 @@ lpost = function(theta, freq) {
   lpost = likelihood + logpost
   return(lpost)
 }
+
+
+# [5](a)
+
+componentwise_metropolis <- function(n_run, theta, frequencies, factors, standard_deviations){
+  m <- length(theta)
+  
+  n_accepted = rep(0, m)
+  walk = matrix(theta, ncol=m) 
+  
+  sigmas = factors * standard_deviations
+  
+  for (i in 2:(n_run+1)) {
+    current_theta = tail(walk, 1)
+    
+    thetas = matrix(rep(current_theta, m), ncol=m, byrow=T)
+    alphas = rep(0, m)
+    
+    for (j in 1:m){
+      thetas[j, j] = thetas[j, j] + runif(1, 0, sigmas[j])
+      delta = exp(lpost(thetas[j,], frequencies) - lpost(current_theta, frequencies))
+      alphas[j] <- min(1, delta)
+    }
+    
+    is_accepted <- runif(m) <= alphas
+    
+    next_theta = current_theta
+    next_theta[is_accepted] = diag(thetas)[is_accepted]
+    
+    walk <- rbind(walk, next_theta) 
+    n_accepted <- n_accepted + as.integer(is_accepted)
+    
+  }
+  
+  accepted_rate = n_accepted / n_run
+  
+  return(list(walk=walk, accepted_rate=accepted_rate))
+  }
