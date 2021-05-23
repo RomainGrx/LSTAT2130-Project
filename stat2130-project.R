@@ -256,7 +256,7 @@ wallonia_model$summary$statistics[1, 1]
 
 diff_mean <-
   unlist(flanders_model$mcmc[][, 1]) - unlist(wallonia_model$mcmc[][, 1])
-plot(density(diff_mean), main = "Credible interval of the difference of Net Income between Flanders and Wallonia", xlab = 'mu1 - mu2')
+plot(density(diff_mean), main = "Credible interval of the difference in Net Income between Flanders and Wallonia", xlab = parse(text=paste0('~ mu[1]', '-', '~ mu[2]')))
 abline(v = quantile(diff_mean, probs = c(0.025, 0.975), col = 'purple'))
 abline(v = HPDinterval(as.mcmc(diff_mean)), col = 'orange')
 legend(
