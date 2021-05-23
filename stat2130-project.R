@@ -98,8 +98,8 @@ componentwise_metropolis <-
   }
 
 
-init_thetas <- c(2090, 0.4)
-sd.prop <- c(500, 0.033)
+init_thetas <- c(3000, 0.4)
+sd.prop <- c(151, 0.033)
 metropolis <-
   componentwise_metropolis(25000, init_thetas, sd.prop, flanders_data)
 
@@ -161,32 +161,45 @@ for (obj in pmc){
 
 #[6] JAGS implementation on Flanders data
 
+
 require(R2WinBUGS)
 require(runjags)
 require(rjags)
 
 model <- "model {
   kappa = 1 / phi
-  lambda = 1 / (mu * phi) 
-  
+  lambda = 1 / (mu * phi)
+
   mu ~ dnorm(3000, pow(306.12, -2))
   phi ~ dunif(0, 10)
-  
+
   for (i in 1:10){
     pi[i] =  pgamma(x[i+1], kappa, lambda) - pgamma(x[i], kappa, lambda)
   }
-  
+
   y ~ dmulti(pi, n)
 }"
 
-flanders_model = run.jags(model, c("mu", "phi"), burnin=2500, sample=25000, data=list(n=sum(flanders_data), x=interval, y=flanders_data), n.chains=5, inits=list(mu=init_thetas[1], phi=init_thetas[2]))
+flanders_model = run.jags(
+  model,
+  c("mu", "phi"),
+  burnin = 2500,
+  sample = 25000,
+  data = list(
+    n = sum(flanders_data),
+    x = interval,
+    y = flanders_data
+  ),
+  n.chains = 5,
+  inits = list(mu = init_thetas[1], phi = init_thetas[2])
+)
 flanders_pcm = as.mcmc.list(flanders_model)
 
 plot(flanders_pcm)
 
 plot(
-  x=as.double(unlist(flanders_model$mcmc[1][,1])),
-  y=as.double(unlist(flanders_model$mcmc[1][,2])), 
+  x = as.double(unlist(flanders_model$mcmc[1][, 1])),
+  y = as.double(unlist(flanders_model$mcmc[1][, 2])),
   xlab = "mu",
   ylab = "phi",
 )
@@ -203,14 +216,26 @@ write.jagsfile(flanders_model, "models/flanders.bug")
 
 # [7] JAGS implementation on wallonia data
 
-wallonia_model = run.jags(model, c("mu", "phi"), burnin=1000, sample=10000, data=list(n=sum(wallonia_data), x=interval, y=wallonia_data), n.chains=5, inits=list(mu=init_thetas[1], phi=init_thetas[2]))
+wallonia_model = run.jags(
+  model,
+  c("mu", "phi"),
+  burnin = 2500,
+  sample = 25000,
+  data = list(
+    n = sum(wallonia_data),
+    x = interval,
+    y = wallonia_data
+  ),
+  n.chains = 5,
+  inits = list(mu = init_thetas[1], phi = init_thetas[2])
+)
 wallonia_pcm = as.mcmc.list(wallonia_model)
 
 plot(wallonia_pcm)
 
 plot(
-  x=as.double(unlist(wallonia_model$mcmc[1][,1])),
-  y=as.double(unlist(wallonia_model$mcmc[1][,2])), 
+  x = as.double(unlist(wallonia_model$mcmc[1][, 1])),
+  y = as.double(unlist(wallonia_model$mcmc[1][, 2])),
   xlab = "mu",
   ylab = "phi",
 )
@@ -224,3 +249,19 @@ geweke.plot(wallonia_pcm[1])
 geweke.diag(wallonia_pcm[1])
 
 write.jagsfile(wallonia_model, "models/wallonia.bug")
+
+wallonia_model$summary$statistics[1, 1]
+
+# [8]
+
+diff_mean <-
+  unlist(flanders_model$mcmc[1][, 1]) - unlist(wallonia_model$mcmc[1][, 1])
+plot(density(diff_mean), main = "Credible interval of the difference of Net Income between Flanders and Wallonia", xlab = 'mu1 - mu2')
+abline(v = quantile(diff_mean, probs = c(0.025, 0.975), col = 'purple'))
+abline(v = HPDinterval(as.mcmc(diff_mean)), col = 'orange')
+legend(
+  "topright",
+  legend = c("Quantile-based intervals", "HPD intervals"),
+  col = c("purple", "orange") ,
+  lty = 1:1
+)
