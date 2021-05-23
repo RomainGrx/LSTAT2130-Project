@@ -27,10 +27,10 @@ colnames(data) <-
     ">6000"
   )
 
-interval <- c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, Inf)
+interval <- c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, 2**32)
 
 muprior <- 3000
-sigmaprior <- 300
+sigmaprior <- 306.12
 
 # [3](b)
 
@@ -44,8 +44,7 @@ lpost <- function(theta, freq) {
   likelihood = sum(sapply(1:length(freq), function(j) {
     freq[j] * log(highlow(interval[j], interval[j + 1]))
   }))
-  logpost = dnorm(theta[1], muprior, sigmaprior, log = T) + dunif(theta[2], 0, 10, log =
-                                                                    T)
+  logpost = dnorm(theta[1], muprior, sigmaprior, log = T) + dunif(theta[2], 0, 10, log = T)
   
   lpost = likelihood + logpost
   return(lpost)
@@ -77,7 +76,7 @@ componentwise_metropolis <-
       
       # Compute for each component
       for (j in 1:m) {
-        theta.props[j, j] = theta.props[j, j] + rnorm(1, 0, sd.prop[j]) # The proposed theta for component j with centered normal at the previous theta and particular sd
+        theta.props[j, j] = theta.props[j, j] + rnorm(1, 0, sd.prop[j])  # The proposed theta for component j with centered normal at the previous theta and particular sd
         probs[j] = min(1, exp(
           lpost(theta.props[j, ], frequencies) - lpost(current_theta, frequencies)
         )) # Get the prob for component j
@@ -86,6 +85,7 @@ componentwise_metropolis <-
       is_accepted = runif(m) <= probs # Check if the probs are greater than random uniform
       
       walk = rbind(walk, current_theta) # Append the last theta on the walk
+      
       walk[i, is_accepted] = diag(theta.props)[is_accepted] # Only move at the next theta if the probs are accepted
       
       n_accepted = n_accepted + as.integer(is_accepted) # Increment the number of accepted per component
@@ -98,10 +98,10 @@ componentwise_metropolis <-
   }
 
 
-init_thetas <- c(2900, 0.3)
-sd.prop <- c(174, 0.0475)
+init_thetas <- c(2090, 0.4)
+sd.prop <- c(500, 0.033)
 metropolis <-
-  componentwise_metropolis(12200, init_thetas, sd.prop, data[1, ])
+  componentwise_metropolis(25000, init_thetas, sd.prop, flanders_data)
 
 sprintf("Acceptance rate for mu    in Flanders : %.3f",
         metropolis$accepted_rate[1])
@@ -127,12 +127,12 @@ print(paste("Effective size :", effectiveSize(as.mcmc(metropolis$walk))))
 # all_metropolis_runs = future_pmap(thetas.init, function(mu, phi){componentwise_metropolis(100, c(mu, phi), sd.prop, data[1,])})
 
 # Gelman statistics
-run1 = componentwise_metropolis(10000, c(2500, 0.2), sd.prop, data[1, ], burnin=0.15)
-run2 = componentwise_metropolis(10000, c(2500, 0.4), sd.prop, data[1, ], burnin=0.15)
-run3 = componentwise_metropolis(10000, c(3000, 0.2), sd.prop, data[1, ], burnin=0.15)
-run4 = componentwise_metropolis(10000, c(3000, 0.4), sd.prop, data[1, ], burnin=0.15)
-run5 = componentwise_metropolis(10000, c(3500, 0.2), sd.prop, data[1, ], burnin=0.15)
-run6 = componentwise_metropolis(10000, c(3500, 0.4), sd.prop, data[1, ], burnin=0.15)
+run1 = componentwise_metropolis(25000, c(2500, 0.3), sd.prop, flanders_data)
+run2 = componentwise_metropolis(25000, c(2500, 0.5), sd.prop, flanders_data)
+run3 = componentwise_metropolis(25000, c(3000, 0.3), sd.prop, flanders_data)
+run4 = componentwise_metropolis(25000, c(3000, 0.5), sd.prop, flanders_data)
+run5 = componentwise_metropolis(25000, c(3500, 0.3), sd.prop, flanders_data)
+run6 = componentwise_metropolis(25000, c(3500, 0.5), sd.prop, flanders_data)
 
 pmc = mcmc.list(
   as.mcmc(run1$walk),
@@ -143,9 +143,10 @@ pmc = mcmc.list(
   as.mcmc(run6$walk)
 )
 
+plot(pmc)
+
 gelman.diag(pmc)
 gelman.plot(pmc)
-
 
 # Geweke diagnostic
 
@@ -155,4 +156,71 @@ for (obj in pmc){
 }
 
 # [5](c) Credible interval
-# TODO
+# TODO : Need Laplace approximation bounds
+
+
+#[6] JAGS implementation on Flanders data
+
+require(R2WinBUGS)
+require(runjags)
+require(rjags)
+
+model <- "model {
+  kappa = 1 / phi
+  lambda = 1 / (mu * phi) 
+  
+  mu ~ dnorm(3000, pow(306.12, -2))
+  phi ~ dunif(0, 10)
+  
+  for (i in 1:10){
+    pi[i] =  pgamma(x[i+1], kappa, lambda) - pgamma(x[i], kappa, lambda)
+  }
+  
+  y ~ dmulti(pi, n)
+}"
+
+flanders_model = run.jags(model, c("mu", "phi"), burnin=2500, sample=25000, data=list(n=sum(flanders_data), x=interval, y=flanders_data), n.chains=5, inits=list(mu=init_thetas[1], phi=init_thetas[2]))
+flanders_pcm = as.mcmc.list(flanders_model)
+
+plot(flanders_pcm)
+
+plot(
+  x=as.double(unlist(flanders_model$mcmc[1][,1])),
+  y=as.double(unlist(flanders_model$mcmc[1][,2])), 
+  xlab = "mu",
+  ylab = "phi",
+)
+
+# Gelman diagnostic
+gelman.plot(flanders_pcm)
+gelman.diag(flanders_pcm)
+
+# Geweke diagnostic on first chain
+geweke.plot(flanders_pcm[1])
+geweke.diag(flanders_pcm[1])
+
+write.jagsfile(flanders_model, "models/flanders.bug")
+
+# [7] JAGS implementation on wallonia data
+
+wallonia_model = run.jags(model, c("mu", "phi"), burnin=1000, sample=10000, data=list(n=sum(wallonia_data), x=interval, y=wallonia_data), n.chains=5, inits=list(mu=init_thetas[1], phi=init_thetas[2]))
+wallonia_pcm = as.mcmc.list(wallonia_model)
+
+plot(wallonia_pcm)
+
+plot(
+  x=as.double(unlist(wallonia_model$mcmc[1][,1])),
+  y=as.double(unlist(wallonia_model$mcmc[1][,2])), 
+  xlab = "mu",
+  ylab = "phi",
+)
+
+# Gelman diagnostic
+gelman.plot(wallonia_pcm)
+gelman.diag(wallonia_pcm)
+
+# Geweke diagnostic on first chain
+geweke.plot(wallonia_pcm[1])
+geweke.diag(wallonia_pcm[1])
+
+write.jagsfile(wallonia_model, "models/wallonia.bug")
