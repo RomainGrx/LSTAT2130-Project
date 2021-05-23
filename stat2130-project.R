@@ -40,31 +40,38 @@ lpost <-function(theta,freq){
 # [5](a)
 
 componentwise_metropolis <- function(n_run, theta, sd.prop, frequencies, burnin=0.1){
-  m = length(sd.prop)
-  n_accepted = c(0, 0)
-  walk = matrix(theta, ncol=m, byrow=TRUE)
+  #' @param n_run. Number of samples in the chain.
+  #' @param theta. The initial values for each component.
+  #' @param sd.prop. The proposed standard deviations used in the normal distribution in order to get the next theta for each component.
+  #' @param frequencies. The frequencies of the data.
+  #' @param burnin. The ratio of first burn-in values to remove from the final chain.
+  
+  m = length(sd.prop) # Number of variables
+  n_accepted = c(0, 0) 
+  walk = matrix(theta, ncol=m, byrow=TRUE) # Contains the whole chain
   
   for (i in 2:(n_run+1)){
-    current_theta = walk[i-1,]
+    current_theta = walk[i-1,] # Current theta at time t-1
     
-    thetas = matrix(rep(current_theta, m), ncol=m, byrow = TRUE)
-    alphas = rep(0, m)
+    theta.props = matrix(rep(current_theta, m), ncol=m, byrow = TRUE) # Matrix with all component moves
+    probs = rep(0, m) # Will contains the prob for each component
     
+    # Compute for each component
     for (j in 1:m){
-      thetas[j, j] = thetas[j, j] + rnorm(1, 0, sd.prop[j])
-      alphas[j] = min(1, exp(lpost(thetas[j,], frequencies) - lpost(current_theta, frequencies)))
+      theta.props[j, j] = theta.props[j, j] + rnorm(1, 0, sd.prop[j]) # The proposed theta for component j with centered normal at the previous theta and particular sd
+      probs[j] = min(1, exp(lpost(theta.props[j,], frequencies) - lpost(current_theta, frequencies))) # Get the prob for component j
     }
     
-    is_accepted = runif(m) <= alphas
+    is_accepted = runif(m) <= probs # Check if the probs are greater than random uniform
     
-    walk = rbind(walk, current_theta)
-    walk[i, is_accepted] = diag(thetas)[is_accepted]
+    walk = rbind(walk, current_theta) # Append the last theta on the walk
+    walk[i, is_accepted] = diag(theta.props)[is_accepted] # Only move at the next theta if the probs are accepted
     
-    n_accepted = n_accepted + as.integer(is_accepted)
+    n_accepted = n_accepted + as.integer(is_accepted) # Increment the number of accepted per component
   }
   
-  walk = tail(walk, -burnin*n_run)
-  accepted_rate = n_accepted / n_run
+  walk = tail(walk, -burnin*n_run) # Remove the first burn-in values
+  accepted_rate = n_accepted / n_run # Get the rate over all runs
   
   return(list(walk=walk, accepted_rate=accepted_rate))
 }
