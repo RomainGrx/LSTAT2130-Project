@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 # @author : Romain Graux, Amandine Evrard, Céline Everaert
 # @date : 2021 May 22, 12:10:38
-# @last modified : 2021 May 22, 12:11:31
+# @last modified : 2021 May 23, 09:29:46
 
+require("coda")
 
 # Data declaration
 flanders_data = c(25,69, 65,106, 80,106,136,94,76,46)
@@ -13,7 +14,7 @@ data = matrix(data=c(flanders_data, wallonia_data), nrow=2)
 rownames(data) <- c("Flanders", "Wallonia") 
 colnames(data) <- c("<1200", "[1200,1500)", "[1500,1800)", "[1800,2300)", "[2300,2700)", "[2700,3300)", "[3300,4000)", "[4000,4900)", "[4900,6000)", ">6000")
 
-interval<-c(0,1200,1500,1800,23002700,3300,4000,4900,6000,Inf)
+interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
 
 muprior<-3000
 sigmaprior<-300
@@ -38,37 +39,45 @@ lpost <-function(theta,freq){
 
 # [5](a)
 
-componentwise_metropolis <- function(n_run, theta, frequencies, factors, standard_deviations){
-  m <- length(theta)
+componentwise_metropolis <- function(n_run, theta, sd.prop, frequencies, burnin=0.1){
+  m = length(sd.prop)
+  n_accepted = c(0, 0)
+  walk = matrix(theta, ncol=m, byrow=TRUE)
   
-  n_accepted = rep(0, m)
-  walk = matrix(theta, ncol=m) 
-  
-  sigmas = factors * standard_deviations
-  
-  for (i in 2:(n_run+1)) {
-    current_theta = tail(walk, 1)
+  for (i in 2:(n_run+1)){
+    current_theta = walk[i-1,]
     
-    thetas = matrix(rep(current_theta, m), ncol=m, byrow=T)
+    thetas = matrix(rep(current_theta, m), ncol=m, byrow = TRUE)
     alphas = rep(0, m)
     
     for (j in 1:m){
-      thetas[j, j] = thetas[j, j] + runif(1, 0, sigmas[j])
-      delta = exp(lpost(thetas[j,], frequencies) - lpost(current_theta, frequencies))
-      alphas[j] <- min(1, delta)
+      thetas[j, j] = thetas[j, j] + rnorm(1, 0, sd.prop[j])
+      alphas[j] = min(1, exp(lpost(thetas[j,], frequencies) - lpost(current_theta, frequencies)))
     }
     
-    is_accepted <- runif(m) <= alphas
+    is_accepted = runif(m) <= alphas
     
-    next_theta = current_theta
-    next_theta[is_accepted] = diag(thetas)[is_accepted]
+    walk = rbind(walk, current_theta)
+    walk[i, is_accepted] = diag(thetas)[is_accepted]
     
-    walk <- rbind(walk, next_theta) 
-    n_accepted <- n_accepted + as.integer(is_accepted)
-    
+    n_accepted = n_accepted + as.integer(is_accepted)
   }
   
+  walk = tail(walk, -burnin*n_run)
   accepted_rate = n_accepted / n_run
   
   return(list(walk=walk, accepted_rate=accepted_rate))
-  }
+}
+
+
+init_thetas <- c(2900, 0.3)
+sd.prop <- c(174, 0.0475)
+metropolis <- componentwise_metropolis(12200, init_thetas, sd.prop, data[1,])
+
+sprintf("Acceptance rate for mu    in Flanders : %.3f", metropolis$accepted_rate[1])
+sprintf("Acceptance rate for sigma in Flanders : %.3f", metropolis$accepted_rate[2])
+
+
+plot(metropolis$walk[,1], metropolis$walk[,2], xlab = "mu", ylab="phi", main=paste("Acceptance rate -> mu:", accepted_rate[1], "phi:", accepted_rate[2]))
+plot(as.mcmc(metropolis$walk))
+print(paste("Effective size :", effectiveSize(walk)))
