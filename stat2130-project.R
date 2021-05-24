@@ -27,28 +27,45 @@ colnames(data) <-
     ">6000"
   )
 
-interval <- c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, 2**32)
-
-muprior <- 3000
-sigmaprior <- 306.12
-
 # [3](b)
 
-lpost <- function(theta, freq) {
-  lambda = 1 / (theta[1] * theta[2])
-  kappa = 1 / theta[2]
+library(EnvStats)
+library(mnormt)
+library(coda)
+
+Flandreinput <- c(rep(600, 25),rep(1350, 69),rep(1650, 65),rep(2050, 106),
+                  rep(2500, 80),rep(3000, 106),rep(3650, 136),rep(4450, 94),
+                  rep(5450, 76),rep(7000, 46))
+GammaFlandre <- egamma(Flandreinput)
+kappaflandre <- GammaFlandre$parameters["shape"]
+lambdaflandre <- 1/GammaFlandre$parameters["scale"]
+muflandre <- kappaflandre/lambdaflandre
+phiflandre <- 1/kappaflandre
+interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
+freq=c(25,69,65,106,80,106,136,94,76,46)
+muprior<-3000
+sigmaprior<-300
+
+highlow <- function(low,high,kappa,lambda){
+  pgamma(high,kappa,lambda) - pgamma(low,kappa,lambda)
+}
+
+lpost <-function(theta,freq){
+  lambda = 1/(theta[1]*theta[2])
+  kappa = 1/theta[2]
   #Likelihood
-  highlow = function(low, high) {
-    pgamma(high, kappa, lambda) - pgamma(low, kappa, lambda)
-  }
-  likelihood = sum(sapply(1:length(freq), function(j) {
-    freq[j] * log(highlow(interval[j], interval[j + 1]))
-  }))
-  logpost = dnorm(theta[1], muprior, sigmaprior, log = T) + dunif(theta[2], 0, 10, log = T)
   
-  lpost = likelihood + logpost
+  likelihood = sum(sapply(1:length(freq),function(j){
+    freq[j] *log(highlow(low=interval[j],high=interval[j+1],kappa,lambda))
+  }))
+  logpost = dnorm(theta[1],muprior,sigmaprior,log=T) + dunif(theta[2],0,10,log=T)
+  
+  lpost = likelihood+logpost
+  names(lpost) ="lpost"
   return(lpost)
 }
+
+lpost(c(muflandre,phiflandre),freq)
 
 # [5](a) Metropolis algorithm
 
