@@ -4,7 +4,8 @@
 # @date : 2021 May 22, 12:10:38
 # @last modified : 2021 May 23, 09:29:46
 
-require("coda")
+library(coda)
+library(ggplot2)
 
 # Data declaration
 flanders_data = c(25, 69, 65, 106, 80, 106, 136, 94, 76, 46)
@@ -139,28 +140,38 @@ componentwise_metropolis <-
     walk = tail(walk,-burnin * n_run) # Remove the first burn-in values
     accepted_rate = n_accepted / n_run # Get the rate over all runs
     
+    colnames(walk) = c("mu", "phi")
     return(list(walk = walk, accepted_rate = accepted_rate))
   }
 
 
+mu1 <- parse(text = paste0("~mu[1]"))
+phi1 <- parse(text = paste0("~phi[1]"))
+
 init_thetas <- c(3000, 0.4)
 sd.prop <- c(151, 0.033)
 metropolis <-
-  componentwise_metropolis(25000, init_thetas, sd.prop, flanders_data)
+  componentwise_metropolis(200, init_thetas, sd.prop, flanders_data)
+metropolis_mcmc <- as.mcmc(metropolis$walk)
 
 sprintf("Acceptance rate for mu    in Flanders : %.3f",
         metropolis$accepted_rate[1])
 sprintf("Acceptance rate for sigma in Flanders : %.3f",
         metropolis$accepted_rate[2])
 
-plot(
-  metropolis$walk[, 1],
-  metropolis$walk[, 2],
-  xlab = "mu",
-  ylab = "phi",
-  main = gettextf("Acceptance rate:: mu %.3f, phi %.3f", metropolis$accepted_rate[1], metropolis$accepted_rate[2])
-)
-plot(as.mcmc(metropolis$walk))
+ggplot(as.data.frame(metropolis$walk), aes(x = mu, y = phi)) +
+  ggtitle(
+    gettextf(
+      "Acceptance rate on Flanders data:: mu %.3f, phi %.3f",
+      metropolis$accepted_rate[1],
+      metropolis$accepted_rate[2]
+    )
+  ) +
+  geom_bin2d(bins = 100) +
+  scale_fill_continuous(type = "viridis") +
+  theme_bw()
+
+plot(metropolis_mcmc)
 print(paste("Effective size :", effectiveSize(as.mcmc(metropolis$walk))))
 
 
@@ -195,7 +206,7 @@ gelman.plot(pmc)
 
 # Geweke diagnostic
 
-for (obj in pmc){
+for (obj in pmc) {
   geweke.diag(obj)
   geweke.plot(obj)
 }
@@ -301,7 +312,9 @@ wallonia_model$summary$statistics[1, 1]
 
 diff_mean <-
   unlist(flanders_model$mcmc[][, 1]) - unlist(wallonia_model$mcmc[][, 1])
-plot(density(diff_mean), main = "Credible interval of the difference in Net Income between Flanders and Wallonia", xlab = parse(text=paste0('~ mu[1]', '-', '~ mu[2]')))
+plot(density(diff_mean),
+     main = "Credible interval of the difference in Net Income between Flanders and Wallonia",
+     xlab = parse(text = paste0('~ mu[1]', '-', '~ mu[2]')))
 abline(v = quantile(diff_mean, probs = c(0.025, 0.975), col = 'purple'))
 abline(v = HPDinterval(as.mcmc(diff_mean)), col = 'orange')
 legend(
