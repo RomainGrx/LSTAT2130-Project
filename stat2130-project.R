@@ -67,11 +67,13 @@ lpost <-function(theta,freq){
 }
 
 lpost(c(muflandre,phiflandre),freq)
+
 # [4]
 
 library(EnvStats)
 library(mnormt)
 library(coda)
+library(dae)
 
 Flandreinput <- c(rep(600, 25),rep(1350, 69),rep(1650, 65),rep(2050, 106),
                   rep(2500, 80),rep(3000, 106),rep(3650, 136),rep(4450, 94),
@@ -81,7 +83,7 @@ kappaflandre <- GammaFlandre$parameters["shape"]
 lambdaflandre <- 1/GammaFlandre$parameters["scale"]
 muflandre <- kappaflandre/lambdaflandre
 phiflandre <- 1/kappaflandre
-interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,2**32)
+interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
 freq=c(25,69,65,106,80,106,136,94,76,46)
 muprior<-3000
 sigmaprior<-306.12
@@ -89,7 +91,7 @@ laplace = function (mu,phi,freq){
   ft= optim(c(mu,phi),lpost, control = list(fnscale = -1),hessian =T, freq=freq)
   param = ft$para
   cov= solve(-ft$hessian)
-  echantillon= rmvnorm(50000,param,cov)
+  echantillon= rmvnorm(param,cov,choleski)
   list(echantillon,param,cov)
 }
 
