@@ -45,7 +45,7 @@ phiflandre <- 1/kappaflandre
 interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
 freq=c(25,69,65,106,80,106,136,94,76,46)
 muprior<-3000
-sigmaprior<-300
+sigmaprior<-306.12
 
 highlow <- function(low,high,kappa,lambda){
   pgamma(high,kappa,lambda) - pgamma(low,kappa,lambda)
@@ -81,10 +81,10 @@ kappaflandre <- GammaFlandre$parameters["shape"]
 lambdaflandre <- 1/GammaFlandre$parameters["scale"]
 muflandre <- kappaflandre/lambdaflandre
 phiflandre <- 1/kappaflandre
-interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
+interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,2**32)
 freq=c(25,69,65,106,80,106,136,94,76,46)
 muprior<-3000
-sigmaprior<-300
+sigmaprior<-306.12
 laplace = function (mu,phi,freq){
   ft= optim(c(mu,phi),lpost, control = list(fnscale = -1),hessian =T, freq=freq)
   param = ft$para
@@ -151,7 +151,7 @@ phi1 <- parse(text = paste0("~phi[1]"))
 init_thetas <- c(3000, 0.4)
 sd.prop <- c(151, 0.033)
 metropolis <-
-  componentwise_metropolis(200, init_thetas, sd.prop, flanders_data)
+  componentwise_metropolis(125000, init_thetas, sd.prop, flanders_data)
 metropolis_mcmc <- as.mcmc(metropolis$walk)
 
 sprintf("Acceptance rate for mu    in Flanders : %.3f",
@@ -199,12 +199,14 @@ pmc = mcmc.list(
   as.mcmc(run6$walk)
 )
 
-plot(pmc)
+plot(pmc) 
 
-gelman.diag(pmc)
+# gelman.diag(pmc)$psrf
 gelman.plot(pmc)
 
 # Geweke diagnostic
+
+geweke.diag(metropolis_mcmc)
 
 for (obj in pmc) {
   geweke.diag(obj)
@@ -253,12 +255,10 @@ flanders_pcm = as.mcmc.list(flanders_model)
 
 plot(flanders_pcm)
 
-plot(
-  x = as.double(unlist(flanders_model$mcmc[1][, 1])),
-  y = as.double(unlist(flanders_model$mcmc[1][, 2])),
-  xlab = "mu",
-  ylab = "phi",
-)
+ggplot(as.data.frame(list(mu=unlist(flanders_model$mcmc[][,1]), phi=unlist(flanders_model$mcmc[][,2]))), aes(x = mu, y = phi)) +
+  geom_bin2d(bins = 100) +
+  scale_fill_continuous(type = "viridis") +
+  theme_bw()
 
 # Gelman diagnostic
 gelman.plot(flanders_pcm)
@@ -286,15 +286,14 @@ wallonia_model = run.jags(
   inits = list(mu = init_thetas[1], phi = init_thetas[2])
 )
 wallonia_pcm = as.mcmc.list(wallonia_model)
+colnames(wallonia_model$mcmc) = c("mu", "phi")
+typeof(flanders_model$mcmc[1][])
 
 plot(wallonia_pcm)
-
-plot(
-  x = as.double(unlist(wallonia_model$mcmc[1][, 1])),
-  y = as.double(unlist(wallonia_model$mcmc[1][, 2])),
-  xlab = "mu",
-  ylab = "phi",
-)
+ggplot(as.data.frame(list(mu=unlist(wallonia_model$mcmc[][,1]), phi=unlist(wallonia_model$mcmc[][,2]))), aes(x = mu, y = phi)) +
+  geom_bin2d(bins = 100) +
+  scale_fill_continuous(type = "viridis") +
+  theme_bw()
 
 # Gelman diagnostic
 gelman.plot(wallonia_pcm)
