@@ -56,35 +56,49 @@ colnames(data) <-
 
 # [3](b)
 
-GammaFlandre <- egamma(raw_flanders)
+#datas 
+GammaFlandre <- egamma(raw_flanders)  #distribution of the monthly net income X
 kappaflandre <- GammaFlandre$parameters["shape"]
 lambdaflandre <- 1 / GammaFlandre$parameters["scale"]
-muflandre <- kappaflandre / lambdaflandre
-phiflandre <- 1 / kappaflandre
+muflandre <- kappaflandre / lambdaflandre # Mean of the monthly net income
+phiflandre <- 1 / kappaflandre # dispersion parameter 
 
-highlow <- function(low, high, kappa, lambda) {
+   #  highlow: Function to compute the probability that low<X <high
+   #' @param low. Lower bound of the interval
+   #' @param high. Higher bound of the interval
+   #' @param kappa ans lambda : parameters that characterizes the gamma distribution
+highlow <- function(low, high, kappa, lambda) { 
   pgamma(high, kappa, lambda) - pgamma(low, kappa, lambda)
 }
 
+   # lposr: Function to compute the logarithm of the joint posterior distribution
+   #' @param theta. vector of parameter: contains the mean and the dispersion parameter
+   #' @param freq. frequency vector of the net monthly income in the studied region
 lpost <- function(theta, freq) {
   lambda = 1 / (theta[1] * theta[2])
   kappa = 1 / theta[2]
   
-  #Likelihood
+  # Computing the logarithm of the Likelihood
   likelihood = sum(sapply(1:length(freq), function(j) {
     freq[j] * log(highlow(low = interval[j], high = interval[j + 1], kappa, lambda))
   }))
+  #logarithm of the distribution of the mean mu and the dispersion parameter sigma
   logpost = dnorm(theta[1], muprior, sigmaprior, log = T) + dunif(theta[2], 0, 10, log = T)
   
+  #Logarithm of the joint posterior
   lpost = likelihood + logpost
   names(lpost) = "lpost"
   return(lpost)
 }
-
+#Result for Flanders
 lpost(c(muflandre, phiflandre), flanders_frequencies)
 
 # [4]
 
+# laplace: Function to compute the Laplace approximation of the joint posterior distribution for Flanders
+#' @param mu. the mean of the distribution 
+#' @param phi. the dispersion parameter of the distribution
+#' @param freq. frequency vector of the net monthly income in the studied region
 laplace = function (mu, phi, freq) {
   ft = optim(
     list(mu = mu, phi = phi),
@@ -102,9 +116,10 @@ laplace = function (mu, phi, freq) {
 }
 
 laplacefl = laplace(muprior, 0.01, flanders_frequencies)
-
+#Laplace approximation of the posterior 
 posterior_laplace_flanders <-
   rnorm(50000, laplacefl$params["mu"], sqrt(laplacefl$cov[1, 1]))
+#95% confidence interval
 HPD_laplace_flanders <-
   HPDinterval(as.mcmc(posterior_laplace_flanders), prob = 0.95)
 
