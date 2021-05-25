@@ -6,18 +6,22 @@
 
 library(dae)
 library(coda)
+library(rjags)
 library(mnormt)
 library(ggplot2)
+library(runjags)
 library(EnvStats)
+library(R2WinBUGS)
 
 # Data declaration
-muprior<-3000
-sigmaprior<-306.12
+muprior <- 3000
+sigmaprior <- 306.12
 
 flanders_frequencies = c(25, 69, 65, 106, 80, 106, 136, 94, 76, 46)
 wallonia_frequencies = c(17, 36, 47, 58 , 47, 53 , 59 , 54, 33, 21)
 
-interval <- c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, 2 ** 32)
+interval <-
+  c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, 2 ** 32)
 
 raw_flanders <-
   c(
@@ -77,13 +81,13 @@ lpost <- function(theta, freq) {
   return(lpost)
 }
 
-lpost(c(muflandre,phiflandre),flanders_frequencies)
+lpost(c(muflandre, phiflandre), flanders_frequencies)
 
 # [4]
 
 laplace = function (mu, phi, freq) {
   ft = optim(
-    list(mu=mu, phi=phi),
+    list(mu = mu, phi = phi),
     lpost,
     control = list(fnscale = -1),
     hessian = T,
@@ -92,17 +96,23 @@ laplace = function (mu, phi, freq) {
   params = ft$par
   cov = solve(-ft$hessian)
   echantillon = rmvnorm(params, cov, method = "choleski")
-  list(echantillon=echantillon, params=params, cov=cov)
+  list(echantillon = echantillon,
+       params = params,
+       cov = cov)
 }
 
 laplacefl = laplace(muprior, 0.01, flanders_frequencies)
 
-posterior_laplace_flanders <- rnorm(50000, laplacefl$params["mu"], sqrt(laplacefl$cov[1, 1]))
-HPD_laplace_flanders <- HPDinterval(as.mcmc(posterior_laplace_flanders), prob=0.95)
+posterior_laplace_flanders <-
+  rnorm(50000, laplacefl$params["mu"], sqrt(laplacefl$cov[1, 1]))
+HPD_laplace_flanders <-
+  HPDinterval(as.mcmc(posterior_laplace_flanders), prob = 0.95)
 
-plot(density(posterior_laplace_flanders),
-     main = "Credible interval of Net Income in Flanders with Laplace approximation",
-     xlab = parse(text = paste0('~ mu[1]')))
+plot(
+  density(posterior_laplace_flanders),
+  main = "Credible interval of Net Income in Flanders with Laplace approximation",
+  xlab = parse(text = paste0('~ mu[1]'))
+)
 abline(v = HPD_laplace_flanders, col = 'orange')
 legend(
   "topright",
@@ -130,7 +140,7 @@ componentwise_metropolis <-
     walk = matrix(theta, ncol = m, byrow = TRUE) # Contains the whole chain
     
     for (i in 2:(n_run + 1)) {
-      current_theta = walk[i - 1,] # Current theta at time t-1
+      current_theta = walk[i - 1, ] # Current theta at time t-1
       
       theta.props = matrix(rep(current_theta, m), ncol = m, byrow = TRUE) # Matrix with all component moves
       probs = rep(0, m) # Will contains the prob for each component
@@ -139,7 +149,7 @@ componentwise_metropolis <-
       for (j in 1:m) {
         theta.props[j, j] = theta.props[j, j] + rnorm(1, 0, sd.prop[j])  # The proposed theta for component j with centered normal at the previous theta and particular sd
         probs[j] = min(1, exp(
-          lpost(theta.props[j,], frequencies) - lpost(current_theta, frequencies)
+          lpost(theta.props[j, ], frequencies) - lpost(current_theta, frequencies)
         )) # Get the prob for component j
       }
       
@@ -152,7 +162,7 @@ componentwise_metropolis <-
       n_accepted = n_accepted + as.integer(is_accepted) # Increment the number of accepted per component
     }
     
-    walk = tail(walk, -burnin * n_run) # Remove the first burn-in values
+    walk = tail(walk,-burnin * n_run) # Remove the first burn-in values
     accepted_rate = n_accepted / n_run # Get the rate over all runs
     
     colnames(walk) = c("mu", "phi")
@@ -163,6 +173,7 @@ componentwise_metropolis <-
 mu1 <- parse(text = paste0("~mu[1]"))
 phi1 <- parse(text = paste0("~phi[1]"))
 
+# Run metropolis chain
 init_thetas <- c(3000, 0.4)
 sd.prop <- c(151, 0.033)
 metropolis <-
@@ -174,6 +185,7 @@ sprintf("Acceptance rate for mu    in Flanders : %.3f",
 sprintf("Acceptance rate for sigma in Flanders : %.3f",
         metropolis$accepted_rate[2])
 
+# Plot the chain
 ggplot(as.data.frame(metropolis$walk), aes(x = mu, y = phi)) +
   ggtitle(
     gettextf(
@@ -189,15 +201,7 @@ ggplot(as.data.frame(metropolis$walk), aes(x = mu, y = phi)) +
 plot(metropolis_mcmc)
 print(paste("Effective size :", effectiveSize(as.mcmc(metropolis$walk))))
 
-
-# library(furrr)
-# library(itertools)
-# future::plan(multisession, workers=20)
-#
-# thetas.init = expand.grid(mu=seq(from=2500, to=3500, by=500), phi=seq(from=0.2, to=0.4, by=0.1))
-# all_metropolis_runs = future_pmap(thetas.init, function(mu, phi){componentwise_metropolis(100, c(mu, phi), sd.prop, data[1,])})
-
-# Gelman statistics
+# Compute 6 chains from different initial values
 run1 = componentwise_metropolis(25000, c(2500, 0.3), sd.prop, flanders_frequencies)
 run2 = componentwise_metropolis(25000, c(2500, 0.5), sd.prop, flanders_frequencies)
 run3 = componentwise_metropolis(25000, c(3000, 0.3), sd.prop, flanders_frequencies)
@@ -205,6 +209,7 @@ run4 = componentwise_metropolis(25000, c(3000, 0.5), sd.prop, flanders_frequenci
 run5 = componentwise_metropolis(25000, c(3500, 0.3), sd.prop, flanders_frequencies)
 run6 = componentwise_metropolis(25000, c(3500, 0.5), sd.prop, flanders_frequencies)
 
+# Group all chains
 pmc = mcmc.list(
   as.mcmc(run1$walk),
   as.mcmc(run2$walk),
@@ -214,26 +219,31 @@ pmc = mcmc.list(
   as.mcmc(run6$walk)
 )
 
+# Plot chains for both mu and phi
 plot(pmc)
 
-# gelman.diag(pmc)$psrf
+# Gelman diagnostic
 gelman.plot(pmc)
+gelman.diag(pmc)
 
 # Geweke diagnostic
-
+geweke.plot(metropolis_mcmc)
 geweke.diag(metropolis_mcmc)
 
-for (obj in pmc) {
-  geweke.diag(obj)
-  geweke.plot(obj)
-}
-
 # [5](c) Credible interval
-plot(density(metropolis_mcmc[,1]),
+HPD_metropolis_flanders <- HPDinterval(metropolis_mcmc[, 1])
+sprintf(
+  "95%% Credible interval on metropolis chain : [%.2f, %.2f]",
+  HPD_metropolis_flanders[1],
+  HPD_metropolis_flanders[2]
+)
+
+# Plot the density of mu chain with credible interval
+plot(density(metropolis_mcmc[, 1]),
      main = "Credible interval of Net Income in Flanders with metropolis output",
      xlab = parse(text = paste0('~ mu[1]')))
-abline(v = HPD_laplace_flanders, col = 'orange', lty=2)
-abline(v = HPDinterval(metropolis_mcmc), col = 'purple', lty=1)
+abline(v = HPD_laplace_flanders, col = 'orange', lty = 2)
+abline(v = HPD_metropolis_flanders, col = 'purple', lty = 1)
 legend(
   "topright",
   legend = c("Laplace HPD interval", "Metropolis HPD interval"),
@@ -243,12 +253,6 @@ legend(
 
 
 #[6] JAGS implementation on Flanders data
-
-
-require(R2WinBUGS)
-require(runjags)
-require(rjags)
-
 model <- "model {
   kappa = 1 / phi
   lambda = 1 / (mu * phi)
@@ -263,6 +267,7 @@ model <- "model {
   y ~ dmulti(pi, n)
 }"
 
+# Run jags with 25000 steps on 5 chains
 flanders_model = run.jags(
   model,
   c("mu", "phi"),
@@ -277,9 +282,14 @@ flanders_model = run.jags(
   inits = list(mu = init_thetas[1], phi = init_thetas[2])
 )
 flanders_pcm = as.mcmc.list(flanders_model)
+flanders_pcm_list <-
+  list(mu = unlist(flanders_model$mcmc[][, 1]),
+       phi = unlist(flanders_model$mcmc[][, 2]))
 
+# Plot chains for both mu and phi
 plot(flanders_pcm)
 
+# PLot the density of all chains by hex
 ggplot(as.data.frame(list(
   mu = unlist(flanders_model$mcmc[][, 1]),
   phi = unlist(flanders_model$mcmc[][, 2])
@@ -293,13 +303,36 @@ gelman.plot(flanders_pcm)
 gelman.diag(flanders_pcm)
 
 # Geweke diagnostic on first chain
-geweke.plot(flanders_pcm[1])
-geweke.diag(flanders_pcm[1])
+geweke.plot(flanders_pcm[3])
+geweke.diag(flanders_pcm[3])
+
+# 95% credible interval of mu
+HPD_jags_flanders <- unlist(HPDinterval(flanders_pcm[3][, 1]))
+sprintf(
+  "95%% Credible interval for Flanders on jags chain : [%.2f, %.2f]",
+  HPD_jags_flanders[1],
+  HPD_jags_flanders[2]
+)
+
+# Plot the density with credible interval
+plot(density(unlist(flanders_pcm[3][, 1])),
+     main = "Credible interval of Net Income in Flanders with jags output",
+     xlab = parse(text = paste0('~ mu[1]')))
+abline(v = unlist(HPD_jags_flanders),
+       col = 'purple',
+       lty = 1)
+legend(
+  "topright",
+  legend = c("Laplace HPD interval"),
+  col = c("purple") ,
+  lty = c(1)
+)
 
 write.jagsfile(flanders_model, "models/flanders.bug")
 
 # [7] JAGS implementation on wallonia data
 
+# Run jags with 25000 steps on 5 chains
 wallonia_model = run.jags(
   model,
   c("mu", "phi"),
@@ -314,10 +347,14 @@ wallonia_model = run.jags(
   inits = list(mu = init_thetas[1], phi = init_thetas[2])
 )
 wallonia_pcm = as.mcmc.list(wallonia_model)
-colnames(wallonia_model$mcmc) = c("mu", "phi")
-typeof(flanders_model$mcmc[1][])
+wallonia_pcm_list <-
+  list(mu = unlist(wallonia_model$mcmc[][, 1]),
+       phi = unlist(wallonia_model$mcmc[][, 2]))
 
+# Plot chains for both mu and phi
 plot(wallonia_pcm)
+
+# PLot the density of all chains by hex
 ggplot(as.data.frame(list(
   mu = unlist(wallonia_model$mcmc[][, 1]),
   phi = unlist(wallonia_model$mcmc[][, 2])
@@ -331,22 +368,53 @@ gelman.plot(wallonia_pcm)
 gelman.diag(wallonia_pcm)
 
 # Geweke diagnostic on first chain
-geweke.plot(wallonia_pcm[1])
-geweke.diag(wallonia_pcm[1])
+geweke.plot(wallonia_pcm[5])
+geweke.diag(wallonia_pcm[5])
+
+# 95% credible interval of mu
+HPD_jags_wallonia <- unlist(HPDinterval(wallonia_pcm[5][, 1]))
+sprintf(
+  "95%% Credible interval for wallonia on jags chain : [%.2f, %.2f]",
+  HPD_jags_wallonia[1],
+  HPD_jags_wallonia[2]
+)
+
+# Plot the density with credible interval
+plot(density(unlist(wallonia_pcm[5][, 1])),
+     main = "Credible interval of Net Income in wallonia with jags output",
+     xlab = parse(text = paste0('~ mu[1]')))
+abline(v = unlist(HPD_jags_wallonia),
+       col = 'purple',
+       lty = 1)
+legend(
+  "topright",
+  legend = c("Laplace HPD interval"),
+  col = c("purple") ,
+  lty = c(1)
+)
 
 write.jagsfile(wallonia_model, "models/wallonia.bug")
 
-wallonia_model$summary$statistics[1, 1]
-
 # [8]
 
+# Group all data
+all_df <- data.frame(region = c(rep("Wallonia", 125000), rep("Flanders", 125000)),
+                     mu = c(unlist(wallonia_pcm_list["mu"]), unlist(flanders_pcm_list["mu"])))
+
+# Plot the density of density posterior for both regions
+ggplot(all_df, aes(x = mu, fill = region)) +
+  ggtitle("Density plot of Flanders and Wallonia mu chains") +
+  geom_density(alpha = 0.4)
+
+# Plot the difference in mean with credible and quantile intervals
 diff_mean <-
   unlist(flanders_model$mcmc[][, 1]) - unlist(wallonia_model$mcmc[][, 1])
+HDP_diff <- HPDinterval(as.mcmc(diff_mean))
 plot(density(diff_mean),
      main = "Credible interval of the difference in Net Income between Flanders and Wallonia",
      xlab = parse(text = paste0('~ mu[1]', '-', '~ mu[2]')))
 abline(v = quantile(diff_mean, probs = c(0.025, 0.975), col = 'purple'))
-abline(v = HPDinterval(as.mcmc(diff_mean)), col = 'orange')
+abline(v = HDP_diff, col = 'orange')
 legend(
   "topright",
   legend = c("Quantile-based interval", "HPD interval"),
