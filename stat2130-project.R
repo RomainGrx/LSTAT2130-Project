@@ -4,14 +4,36 @@
 # @date : 2021 May 22, 12:10:38
 # @last modified : 2021 May 23, 09:29:46
 
+library(dae)
 library(coda)
+library(mnormt)
 library(ggplot2)
+library(EnvStats)
 
 # Data declaration
-flanders_data = c(25, 69, 65, 106, 80, 106, 136, 94, 76, 46)
-wallonia_data = c(17, 36, 47, 58 , 47, 53 , 59 , 54, 33, 21)
+muprior<-3000
+sigmaprior<-306.12
 
-data = matrix(data = c(flanders_data, wallonia_data),
+flanders_frequencies = c(25, 69, 65, 106, 80, 106, 136, 94, 76, 46)
+wallonia_frequencies = c(17, 36, 47, 58 , 47, 53 , 59 , 54, 33, 21)
+
+interval <- c(0, 1200, 1500, 1800, 2300, 2700, 3300, 4000, 4900, 6000, 2 ** 32)
+
+raw_flanders <-
+  c(
+    rep(600, 25),
+    rep(1350, 69),
+    rep(1650, 65),
+    rep(2050, 106),
+    rep(2500, 80),
+    rep(3000, 106),
+    rep(3650, 136),
+    rep(4450, 94),
+    rep(5450, 76),
+    rep(7000, 46)
+  )
+
+data = matrix(data = c(flanders_frequencies, wallonia_frequencies),
               nrow = 2)
 rownames(data) <- c("Flanders", "Wallonia")
 colnames(data) <-
@@ -30,73 +52,64 @@ colnames(data) <-
 
 # [3](b)
 
-library(EnvStats)
-library(mnormt)
-library(coda)
-
-Flandreinput <- c(rep(600, 25),rep(1350, 69),rep(1650, 65),rep(2050, 106),
-                  rep(2500, 80),rep(3000, 106),rep(3650, 136),rep(4450, 94),
-                  rep(5450, 76),rep(7000, 46))
-GammaFlandre <- egamma(Flandreinput)
+GammaFlandre <- egamma(raw_flanders)
 kappaflandre <- GammaFlandre$parameters["shape"]
-lambdaflandre <- 1/GammaFlandre$parameters["scale"]
-muflandre <- kappaflandre/lambdaflandre
-phiflandre <- 1/kappaflandre
-interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
-freq=c(25,69,65,106,80,106,136,94,76,46)
-muprior<-3000
-sigmaprior<-306.12
+lambdaflandre <- 1 / GammaFlandre$parameters["scale"]
+muflandre <- kappaflandre / lambdaflandre
+phiflandre <- 1 / kappaflandre
 
-highlow <- function(low,high,kappa,lambda){
-  pgamma(high,kappa,lambda) - pgamma(low,kappa,lambda)
+highlow <- function(low, high, kappa, lambda) {
+  pgamma(high, kappa, lambda) - pgamma(low, kappa, lambda)
 }
 
-lpost <-function(theta,freq){
-  lambda = 1/(theta[1]*theta[2])
-  kappa = 1/theta[2]
+lpost <- function(theta, freq) {
+  lambda = 1 / (theta[1] * theta[2])
+  kappa = 1 / theta[2]
+  
   #Likelihood
-  
-  likelihood = sum(sapply(1:length(freq),function(j){
-    freq[j] *log(highlow(low=interval[j],high=interval[j+1],kappa,lambda))
+  likelihood = sum(sapply(1:length(freq), function(j) {
+    freq[j] * log(highlow(low = interval[j], high = interval[j + 1], kappa, lambda))
   }))
-  logpost = dnorm(theta[1],muprior,sigmaprior,log=T) + dunif(theta[2],0,10,log=T)
+  logpost = dnorm(theta[1], muprior, sigmaprior, log = T) + dunif(theta[2], 0, 10, log = T)
   
-  lpost = likelihood+logpost
-  names(lpost) ="lpost"
+  lpost = likelihood + logpost
+  names(lpost) = "lpost"
   return(lpost)
 }
 
-lpost(c(muflandre,phiflandre),freq)
+lpost(c(muflandre,phiflandre),flanders_frequencies)
 
 # [4]
 
-library(EnvStats)
-library(mnormt)
-library(coda)
-library(dae)
-
-Flandreinput <- c(rep(600, 25),rep(1350, 69),rep(1650, 65),rep(2050, 106),
-                  rep(2500, 80),rep(3000, 106),rep(3650, 136),rep(4450, 94),
-                  rep(5450, 76),rep(7000, 46))
-GammaFlandre <- egamma(Flandreinput)
-kappaflandre <- GammaFlandre$parameters["shape"]
-lambdaflandre <- 1/GammaFlandre$parameters["scale"]
-muflandre <- kappaflandre/lambdaflandre
-phiflandre <- 1/kappaflandre
-interval<-c(0,1200,1500,1800,2300,2700,3300,4000,4900,6000,Inf)
-freq=c(25,69,65,106,80,106,136,94,76,46)
-muprior<-3000
-sigmaprior<-306.12
-laplace = function (mu,phi,freq){
-  ft= optim(c(mu,phi),lpost, control = list(fnscale = -1),hessian =T, freq=freq)
-  param = ft$para
-  cov= solve(-ft$hessian)
-  echantillon= rmvnorm(param,cov,choleski)
-  list(echantillon,param,cov)
+laplace = function (mu, phi, freq) {
+  ft = optim(
+    list(mu=mu, phi=phi),
+    lpost,
+    control = list(fnscale = -1),
+    hessian = T,
+    freq = freq
+  )
+  params = ft$par
+  cov = solve(-ft$hessian)
+  echantillon = rmvnorm(params, cov, method = "choleski")
+  list(echantillon=echantillon, params=params, cov=cov)
 }
 
-laplacefl=laplace(muprior,0.01,freq)
-#laplacefl.mcm = mcmc(laplace_)
+laplacefl = laplace(muprior, 0.01, flanders_frequencies)
+
+posterior_laplace_flanders <- rnorm(50000, laplacefl$params["mu"], sqrt(laplacefl$cov[1, 1]))
+HPD_laplace_flanders <- HPDinterval(as.mcmc(posterior_laplace_flanders), prob=0.95)
+
+plot(density(posterior_laplace_flanders),
+     main = "Credible interval of Net Income in Flanders with Laplace approximation",
+     xlab = parse(text = paste0('~ mu[1]')))
+abline(v = HPD_laplace_flanders, col = 'orange')
+legend(
+  "topright",
+  legend = c("HPD interval"),
+  col = c("orange") ,
+  lty = 1
+)
 
 # [5](a) Metropolis algorithm
 
@@ -117,7 +130,7 @@ componentwise_metropolis <-
     walk = matrix(theta, ncol = m, byrow = TRUE) # Contains the whole chain
     
     for (i in 2:(n_run + 1)) {
-      current_theta = walk[i - 1, ] # Current theta at time t-1
+      current_theta = walk[i - 1,] # Current theta at time t-1
       
       theta.props = matrix(rep(current_theta, m), ncol = m, byrow = TRUE) # Matrix with all component moves
       probs = rep(0, m) # Will contains the prob for each component
@@ -126,7 +139,7 @@ componentwise_metropolis <-
       for (j in 1:m) {
         theta.props[j, j] = theta.props[j, j] + rnorm(1, 0, sd.prop[j])  # The proposed theta for component j with centered normal at the previous theta and particular sd
         probs[j] = min(1, exp(
-          lpost(theta.props[j, ], frequencies) - lpost(current_theta, frequencies)
+          lpost(theta.props[j,], frequencies) - lpost(current_theta, frequencies)
         )) # Get the prob for component j
       }
       
@@ -139,7 +152,7 @@ componentwise_metropolis <-
       n_accepted = n_accepted + as.integer(is_accepted) # Increment the number of accepted per component
     }
     
-    walk = tail(walk,-burnin * n_run) # Remove the first burn-in values
+    walk = tail(walk, -burnin * n_run) # Remove the first burn-in values
     accepted_rate = n_accepted / n_run # Get the rate over all runs
     
     colnames(walk) = c("mu", "phi")
@@ -153,7 +166,7 @@ phi1 <- parse(text = paste0("~phi[1]"))
 init_thetas <- c(3000, 0.4)
 sd.prop <- c(151, 0.033)
 metropolis <-
-  componentwise_metropolis(125000, init_thetas, sd.prop, flanders_data)
+  componentwise_metropolis(125000, init_thetas, sd.prop, flanders_frequencies)
 metropolis_mcmc <- as.mcmc(metropolis$walk)
 
 sprintf("Acceptance rate for mu    in Flanders : %.3f",
@@ -185,12 +198,12 @@ print(paste("Effective size :", effectiveSize(as.mcmc(metropolis$walk))))
 # all_metropolis_runs = future_pmap(thetas.init, function(mu, phi){componentwise_metropolis(100, c(mu, phi), sd.prop, data[1,])})
 
 # Gelman statistics
-run1 = componentwise_metropolis(25000, c(2500, 0.3), sd.prop, flanders_data)
-run2 = componentwise_metropolis(25000, c(2500, 0.5), sd.prop, flanders_data)
-run3 = componentwise_metropolis(25000, c(3000, 0.3), sd.prop, flanders_data)
-run4 = componentwise_metropolis(25000, c(3000, 0.5), sd.prop, flanders_data)
-run5 = componentwise_metropolis(25000, c(3500, 0.3), sd.prop, flanders_data)
-run6 = componentwise_metropolis(25000, c(3500, 0.5), sd.prop, flanders_data)
+run1 = componentwise_metropolis(25000, c(2500, 0.3), sd.prop, flanders_frequencies)
+run2 = componentwise_metropolis(25000, c(2500, 0.5), sd.prop, flanders_frequencies)
+run3 = componentwise_metropolis(25000, c(3000, 0.3), sd.prop, flanders_frequencies)
+run4 = componentwise_metropolis(25000, c(3000, 0.5), sd.prop, flanders_frequencies)
+run5 = componentwise_metropolis(25000, c(3500, 0.3), sd.prop, flanders_frequencies)
+run6 = componentwise_metropolis(25000, c(3500, 0.5), sd.prop, flanders_frequencies)
 
 pmc = mcmc.list(
   as.mcmc(run1$walk),
@@ -201,7 +214,7 @@ pmc = mcmc.list(
   as.mcmc(run6$walk)
 )
 
-plot(pmc) 
+plot(pmc)
 
 # gelman.diag(pmc)$psrf
 gelman.plot(pmc)
@@ -216,7 +229,17 @@ for (obj in pmc) {
 }
 
 # [5](c) Credible interval
-# TODO : Need Laplace approximation bounds
+plot(density(metropolis_mcmc[,1]),
+     main = "Credible interval of Net Income in Flanders with metropolis output",
+     xlab = parse(text = paste0('~ mu[1]')))
+abline(v = HPD_laplace_flanders, col = 'orange', lty=2)
+abline(v = HPDinterval(metropolis_mcmc), col = 'purple', lty=1)
+legend(
+  "topright",
+  legend = c("Laplace HPD interval", "Metropolis HPD interval"),
+  col = c("orange", "purple") ,
+  lty = c(2, 1)
+)
 
 
 #[6] JAGS implementation on Flanders data
@@ -246,9 +269,9 @@ flanders_model = run.jags(
   burnin = 2500,
   sample = 25000,
   data = list(
-    n = sum(flanders_data),
+    n = sum(flanders_frequencies),
     x = interval,
-    y = flanders_data
+    y = flanders_frequencies
   ),
   n.chains = 5,
   inits = list(mu = init_thetas[1], phi = init_thetas[2])
@@ -257,7 +280,10 @@ flanders_pcm = as.mcmc.list(flanders_model)
 
 plot(flanders_pcm)
 
-ggplot(as.data.frame(list(mu=unlist(flanders_model$mcmc[][,1]), phi=unlist(flanders_model$mcmc[][,2]))), aes(x = mu, y = phi)) +
+ggplot(as.data.frame(list(
+  mu = unlist(flanders_model$mcmc[][, 1]),
+  phi = unlist(flanders_model$mcmc[][, 2])
+)), aes(x = mu, y = phi)) +
   geom_bin2d(bins = 100) +
   scale_fill_continuous(type = "viridis") +
   theme_bw()
@@ -280,9 +306,9 @@ wallonia_model = run.jags(
   burnin = 2500,
   sample = 25000,
   data = list(
-    n = sum(wallonia_data),
+    n = sum(wallonia_frequencies),
     x = interval,
-    y = wallonia_data
+    y = wallonia_frequencies
   ),
   n.chains = 5,
   inits = list(mu = init_thetas[1], phi = init_thetas[2])
@@ -292,7 +318,10 @@ colnames(wallonia_model$mcmc) = c("mu", "phi")
 typeof(flanders_model$mcmc[1][])
 
 plot(wallonia_pcm)
-ggplot(as.data.frame(list(mu=unlist(wallonia_model$mcmc[][,1]), phi=unlist(wallonia_model$mcmc[][,2]))), aes(x = mu, y = phi)) +
+ggplot(as.data.frame(list(
+  mu = unlist(wallonia_model$mcmc[][, 1]),
+  phi = unlist(wallonia_model$mcmc[][, 2])
+)), aes(x = mu, y = phi)) +
   geom_bin2d(bins = 100) +
   scale_fill_continuous(type = "viridis") +
   theme_bw()
